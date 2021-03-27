@@ -1,0 +1,205 @@
+#include <QTRSensors.h>
+
+QTRSensors qtr;
+
+//int d[6];
+int last_proportional = 0;
+int integral = 0;
+void PIDd();
+
+//Standard PWM DC control
+int E1 = 5;     //M1 Speed Control
+int E2 = 6;     //M2 Speed Control
+int LM = 4;    //M1 Direction Control
+int RM = 7;    //M2 Direction Control
+//QTRsensors
+const uint8_t SensorCount = 5;      //change according to number of sensors
+uint16_t sensorValues[SensorCount];
+
+struct position {
+   uint16_t positionBlack;
+   uint16_t positionWhite;
+  };
+
+void setup()
+{
+  Serial.begin(115200);      //Set Baud Rate
+  delay(200);
+  Serial.println("setup");
+  delay(200);
+  sensor_setup();
+  motor_setup();
+  PIDd();
+  
+}
+
+void sensor_setup()
+{
+  delay(1000);
+  qtr.setTypeRC();
+  qtr.setSensorPins((const uint8_t[]){3, 0, 13, 9, 10}, SensorCount);
+  qtr.setEmitterPin(2);
+}
+
+void motor_setup ()
+{
+  //motor
+  int j;
+  for (j = 4; j <= 7; j++) {
+    pinMode(j, OUTPUT);
+  }
+  Serial.println("Motor");
+
+}
+
+void turn_left (char a, char b)            //Turn Left
+{
+  analogWrite (E1, a);
+  digitalWrite(LM, HIGH);
+  analogWrite (E2, b);
+  digitalWrite(RM, HIGH);
+}
+void turn_right (char a, char b)            //Turn Right
+{
+  analogWrite (E1, a);
+  digitalWrite(LM, HIGH);
+  analogWrite (E2, b);
+  digitalWrite(RM, HIGH);
+}
+void sharp_left (char a, char b)            //Turn Left
+{
+  analogWrite (E1, a);
+  digitalWrite(LM, LOW);
+  analogWrite (E2, b);
+  digitalWrite(RM, HIGH);
+}
+void sharp_right (char a, char b)            //Turn Right
+{
+  analogWrite (E1, a);
+  digitalWrite(LM, HIGH);
+  analogWrite (E2, b);
+  digitalWrite(RM, LOW);
+}
+void breakCar (){
+   Serial.print("Breaking");
+   analogWrite(E1, 40);
+   digitalWrite(LM, LOW);
+   analogWrite(E2, 40);
+   digitalWrite(RM, LOW);
+  }
+
+int sensing()
+{
+  //wants to turn left: higher position
+  qtr.read(sensorValues);
+  uint16_t blackPosition = qtr.readLineBlack(sensorValues);
+  Serial.print("Black Position = ");
+  Serial.print(blackPosition);
+  Serial.println();
+  return blackPosition;
+}
+
+int sensingWhite(){
+    uint16_t whitePosition = qtr.readLineWhite(sensorValues);
+    Serial.print("White Position = ");
+    Serial.print(whitePosition);
+    Serial.println();
+    return whitePosition;
+    }
+
+void PIDd() {
+  Serial.println("PID");
+  int a;       // Control function
+  int power_difference = 0;
+  float Kp, Ki, Kd;
+  unsigned int blackPosition;
+  unsigned int whitePosition;
+  int derivative, proportional;
+  boolean straight = true;
+  boolean turn = false;
+  while(straight) { 
+    blackPosition = sensing();
+    proportional = ((int)blackPosition - 2100)/7;
+    derivative = proportional - last_proportional;
+    integral = integral+proportional;
+    last_proportional = proportional;
+    Kp = 4; //used to be 5
+    Ki = 0;
+    Kd = 40; //used to be 40
+      
+    power_difference = proportional*Kp + integral*Ki + derivative*Kd;
+    const int max = 40;
+    if(power_difference > max)
+     power_difference = max;
+    if(power_difference < -max)
+     power_difference = (-1*max);
+
+    if (blackPosition > 2500){//Turn sharp left
+        Serial.println();
+        Serial.println("Turn Left");
+        sharp_left(40, 30+power_difference-3);
+        straight = false;
+        turn = true;
+        break;
+    }
+    else if(blackPosition < 1500){
+         Serial.println();
+         Serial.println("Turn Right");
+         sharp_right(30-power_difference, 40);
+         straight = false;
+         turn = true;
+         break;
+    }
+    
+    if(power_difference > 0){  //left
+     turn_left(25, 25+power_difference-3);
+    }
+    else{  //right
+     turn_right(25-power_difference, 25-3);
+    }
+
+//    if(d[0] == HIGH && d[1]==HIGH && d[2] == HIGH && d[3] == HIGH)
+//      return;
+//    else if(d[0] == LOW || d[3] == LOW)
+//      return;
+
+         
+  }
+  while(turn){
+    Serial.print("Turning");
+    blackPosition = sensing();
+    proportional = ((int)blackPosition - 2100)/7;
+    derivative = proportional - last_proportional;
+    integral = integral+proportional;
+    last_proportional = proportional;
+    Kp = 5; //used to be 5
+    Ki = 0;
+    Kd = 40; //used to be 40
+      
+    power_difference = proportional*Kp + integral*Ki + derivative*Kd;
+    const int max = 45;
+    if(power_difference > max){power_difference = max;}
+    else if(power_difference < -max){
+      power_difference = (-1*max);
+      }
+  
+    if (blackPosition < 1500){
+      sharp_right(15-power_difference, 0);
+     }
+    else if (blackPosition > 2500){
+      sharp_left(0, 15+power_difference-3);
+    }
+    else{
+      turn = false;
+      break;
+      }
+  }
+}
+//positive position(valuelarger), wants to turn left, hence LM is slower than RM
+
+
+void loop()
+{
+  PIDd();
+  delay(100);
+  }
